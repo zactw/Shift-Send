@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -19,7 +21,8 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 function AvailabilityGrid() {
   const searchParams = useSearchParams()
   const token = searchParams.get('token') // employee user id for MVP
-  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createClient() as any
 
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [availability, setAvailability] = useState<AvailabilityMap>({})

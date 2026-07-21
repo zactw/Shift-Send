@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -8,10 +10,11 @@ type ShiftTemplate = {
   name: string
   start_time: string
   end_time: string
-  days_of_week: number[]
+  days_of_week: number[] | null
   slots_required: number
   sort_order: number
   is_active: boolean
+  workspace_id: string
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -25,7 +28,8 @@ const emptyForm = {
 }
 
 export default function GridBuilderPage() {
-  const supabase = createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createClient() as any
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -115,7 +119,7 @@ export default function GridBuilderPage() {
       name: t.name,
       start_time: t.start_time,
       end_time: t.end_time,
-      days_of_week: t.days_of_week,
+      days_of_week: t.days_of_week ?? [],
       slots_required: t.slots_required,
     })
     setEditing(t.id)
@@ -245,7 +249,7 @@ export default function GridBuilderPage() {
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   {t.start_time}–{t.end_time} · {t.slots_required} slot{t.slots_required !== 1 ? 's' : ''} ·{' '}
-                  {t.days_of_week.map(d => DAYS[d]).join(', ')}
+                  {(t.days_of_week ?? []).map(d => DAYS[d]).join(', ')}
                 </div>
               </div>
               <div className="flex items-center gap-2">

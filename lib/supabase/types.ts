@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       workspaces: {
@@ -42,6 +42,7 @@ export interface Database {
           twilio_phone_number?: string | null
           updated_at?: string
         }
+        Relationships: []
       }
       users: {
         Row: {
@@ -72,6 +73,51 @@ export interface Database {
           phone?: string | null
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'users_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      departments: {
+        Row: {
+          id: string
+          workspace_id: string
+          name: string
+          color: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          name: string
+          color?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          workspace_id?: string
+          name?: string
+          color?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'departments_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          }
+        ]
       }
       employees: {
         Row: {
@@ -82,6 +128,7 @@ export interface Database {
           email: string | null
           position: string | null
           active: boolean
+          department_id: string | null
           availability_token: string
           created_at: string
           updated_at: string
@@ -94,6 +141,7 @@ export interface Database {
           email?: string | null
           position?: string | null
           active?: boolean
+          department_id?: string | null
           availability_token?: string
           created_at?: string
           updated_at?: string
@@ -105,8 +153,25 @@ export interface Database {
           email?: string | null
           position?: string | null
           active?: boolean
+          department_id?: string | null
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'employees_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'employees_department_id_fkey'
+            columns: ['department_id']
+            isOneToOne: false
+            referencedRelation: 'departments'
+            referencedColumns: ['id']
+          }
+        ]
       }
       shift_templates: {
         Row: {
@@ -114,11 +179,15 @@ export interface Database {
           workspace_id: string
           name: string
           day_of_week: number
+          days_of_week: number[] | null
           start_time: string
           end_time: string
           required_staff: number
+          slots_required: number
           position: string | null
           active: boolean
+          is_active: boolean
+          sort_order: number
           created_at: string
           updated_at: string
         }
@@ -126,12 +195,16 @@ export interface Database {
           id?: string
           workspace_id: string
           name: string
-          day_of_week: number
+          day_of_week?: number
+          days_of_week?: number[] | null
           start_time: string
           end_time: string
           required_staff?: number
+          slots_required?: number
           position?: string | null
           active?: boolean
+          is_active?: boolean
+          sort_order?: number
           created_at?: string
           updated_at?: string
         }
@@ -139,13 +212,26 @@ export interface Database {
           workspace_id?: string
           name?: string
           day_of_week?: number
+          days_of_week?: number[] | null
           start_time?: string
           end_time?: string
           required_staff?: number
+          slots_required?: number
           position?: string | null
           active?: boolean
+          is_active?: boolean
+          sort_order?: number
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'shift_templates_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          }
+        ]
       }
       schedule_periods: {
         Row: {
@@ -173,6 +259,86 @@ export interface Database {
           status?: 'draft' | 'active' | 'completed'
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'schedule_periods_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      schedule_entries: {
+        Row: {
+          id: string
+          workspace_id: string
+          period_id: string
+          employee_id: string
+          department_id: string | null
+          date: string
+          start_time: string | null
+          end_time: string | null
+          is_off: boolean
+          needs_coverage: boolean
+          coverage_note: string | null
+          covered_by_employee_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          period_id: string
+          employee_id: string
+          department_id?: string | null
+          date: string
+          start_time?: string | null
+          end_time?: string | null
+          is_off?: boolean
+          needs_coverage?: boolean
+          coverage_note?: string | null
+          covered_by_employee_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          workspace_id?: string
+          period_id?: string
+          employee_id?: string
+          department_id?: string | null
+          date?: string
+          start_time?: string | null
+          end_time?: string | null
+          is_off?: boolean
+          needs_coverage?: boolean
+          coverage_note?: string | null
+          covered_by_employee_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'schedule_entries_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'schedule_entries_employee_id_fkey'
+            columns: ['employee_id']
+            isOneToOne: false
+            referencedRelation: 'employees'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'schedule_entries_covered_by_employee_id_fkey'
+            columns: ['covered_by_employee_id']
+            isOneToOne: false
+            referencedRelation: 'employees'
+            referencedColumns: ['id']
+          }
+        ]
       }
       shifts: {
         Row: {
@@ -218,6 +384,15 @@ export interface Database {
           status?: 'open' | 'filling' | 'filled' | 'cancelled'
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'shifts_workspace_id_fkey'
+            columns: ['workspace_id']
+            isOneToOne: false
+            referencedRelation: 'workspaces'
+            referencedColumns: ['id']
+          }
+        ]
       }
       shift_assignments: {
         Row: {
@@ -251,6 +426,22 @@ export interface Database {
           responded_at?: string | null
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'shift_assignments_shift_id_fkey'
+            columns: ['shift_id']
+            isOneToOne: false
+            referencedRelation: 'shifts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'shift_assignments_employee_id_fkey'
+            columns: ['employee_id']
+            isOneToOne: false
+            referencedRelation: 'employees'
+            referencedColumns: ['id']
+          }
+        ]
       }
       availability: {
         Row: {
@@ -279,27 +470,46 @@ export interface Database {
           end_time?: string
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: 'availability_employee_id_fkey'
+            columns: ['employee_id']
+            isOneToOne: false
+            referencedRelation: 'employees'
+            referencedColumns: ['id']
+          }
+        ]
       }
     }
-    Views: {}
+    Views: {
+      [_ in never]: never
+    }
     Functions: {
       get_user_workspace_id: {
-        Args: {}
+        Args: Record<PropertyKey, never>
         Returns: string
       }
     }
-    Enums: {}
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
 
+// Convenience type exports
 export type Workspace = Database['public']['Tables']['workspaces']['Row']
 export type WorkspaceInsert = Database['public']['Tables']['workspaces']['Insert']
 export type User = Database['public']['Tables']['users']['Row']
+export type Department = Database['public']['Tables']['departments']['Row']
 export type Employee = Database['public']['Tables']['employees']['Row']
 export type EmployeeInsert = Database['public']['Tables']['employees']['Insert']
 export type ShiftTemplate = Database['public']['Tables']['shift_templates']['Row']
 export type ShiftTemplateInsert = Database['public']['Tables']['shift_templates']['Insert']
 export type SchedulePeriod = Database['public']['Tables']['schedule_periods']['Row']
+export type ScheduleEntry = Database['public']['Tables']['schedule_entries']['Row']
 export type Shift = Database['public']['Tables']['shifts']['Row']
 export type ShiftInsert = Database['public']['Tables']['shifts']['Insert']
 export type ShiftAssignment = Database['public']['Tables']['shift_assignments']['Row']

@@ -1,313 +1,282 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import EmployeeGrid from '@/components/schedule/EmployeeGrid'
+import VisualGrid from '@/components/schedule/VisualGrid'
+import {
+  getMonday,
+  getWeekDates,
+  formatDate,
+  WEEK_DAYS,
+  type Department,
+  type EmployeeRow,
+  type ScheduleEntry,
+  type SchedulePeriod,
+} from '@/components/schedule/utils'
 
-type ShiftTemplate = {
-  id: string
-  name: string
-  start_time: string
-  end_time: string
-  days_of_week: number[]
-  slots_required: number
-  sort_order: number
-}
-
-type Shift = {
-  id: string
-  date: string
-  shift_template_id: string
-  slots_required: number
-  status: 'open' | 'partial' | 'filled' | 'cancelled'
-}
-
-type Assignment = {
-  id: string
-  shift_id: string
-  status: 'pending' | 'confirmed' | 'declined'
-  users: { name: string } | null
-}
-
-type SchedulePeriod = {
-  id: string
-  start_date: string
-  end_date: string
-  status: string
-}
-
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function getWeekDates(weekStart: Date): Date[] {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
-    d.setDate(weekStart.getDate() + i)
-    return d
-  })
-}
-
-function getMonday(date: Date): Date {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  d.setDate(diff)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-function formatDate(d: Date): string {
-  return d.toISOString().split('T')[0]
-}
+type Tab = 'employee' | 'visual'
 
 export default function SchedulePage() {
-  const supabase = createClient()
+  const [tab, setTab] = useState<Tab>('employee')
   const [weekStart, setWeekStart] = useState<Date>(getMonday(new Date()))
-  const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [period, setPeriod] = useState<SchedulePeriod | null>(null)
-  const [shifts, setShifts] = useState<Shift[]>([])
-  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [entries, setEntries] = useState<ScheduleEntry[]>([])
+  const [employees, setEmployees] = useState<EmployeeRow[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [sendingShift, setSendingShift] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const weekDates = getWeekDates(weekStart)
   const startDate = formatDate(weekDates[0])
   const endDate = formatDate(weekDates[6])
 
-  const loadData = useCallback(async () => {
+  // Load employees + departments (static-ish data, load once then cache)
+  const loadStatic = useCallback(async () => {
+    const [empRes, deptRes] = await Promise.all([
+      fetch('/api/employees'),
+      fetch('/api/departments'),
+    ])
+    const empJson = await empRes.json()
+    const deptJson = await deptRes.json()
+    setEmployees(empJson.employees ?? [])
+    setDepartments(deptJson.departments ?? [])
+  }, [])
+
+  // Load schedule period + entries for current week
+  const loadPeriod = useCallback(async () => {
+    const res = await fetch(`/api/schedule-periods?weekStart=${startDate}`)
+    const json = await res.json()
+    const periods: SchedulePeriod[] = json.periods ?? []
+    const p = periods[0] ?? null
+    setPeriod(p)
+
+    if (p) {
+      const eRes = await fetch(`/api/schedule-entries?periodId=${p.id}`)
+      const eJson = await eRes.json()
+      setEntries(eJson.entries ?? [])
+    } else {
+      setEntries([])
+    }
+  }, [startDate])
+
+  const loadAll = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('workspace_id')
-        .eq('id', user.id)
-        .single()
-      if (!userData) return
-
-      // Load templates
-      const { data: tmplData } = await supabase
-        .from('shift_templates')
-        .select('*')
-        .eq('workspace_id', userData.workspace_id)
-        .eq('is_active', true)
-        .order('sort_order')
-      setTemplates(tmplData ?? [])
-
-      // Load period for this week
-      const { data: periodData } = await supabase
-        .from('schedule_periods')
-        .select('*')
-        .eq('workspace_id', userData.workspace_id)
-        .eq('start_date', startDate)
-        .eq('end_date', endDate)
-        .maybeSingle()
-      setPeriod(periodData ?? null)
-
-      if (periodData) {
-        const { data: shiftData } = await supabase
-          .from('shifts')
-          .select('*')
-          .eq('period_id', periodData.id)
-        setShifts(shiftData ?? [])
-
-        if (shiftData?.length) {
-          const { data: assignData } = await supabase
-            .from('shift_assignments')
-            .select('id, shift_id, status, users(name)')
-            .in('shift_id', shiftData.map(s => s.id))
-          setAssignments((assignData ?? []) as Assignment[])
-        } else {
-          setAssignments([])
-        }
-      } else {
-        setShifts([])
-        setAssignments([])
-      }
+      await Promise.all([loadStatic(), loadPeriod()])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load schedule')
     } finally {
       setLoading(false)
     }
-  }, [supabase, startDate, endDate])
+  }, [loadStatic, loadPeriod])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadAll() }, [loadAll])
 
-  async function handleGenerate() {
-    setGenerating(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/schedule/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startDate, endDate }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error ?? 'Failed to generate')
-      }
-      await loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate schedule')
-    } finally {
-      setGenerating(false)
+  // Reload period when week changes (keep static data)
+  useEffect(() => {
+    if (!loading) {
+      setLoading(true)
+      loadPeriod().finally(() => setLoading(false))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate])
+
+  // ──────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────
+
+  async function ensurePeriod(): Promise<SchedulePeriod> {
+    if (period) return period
+    const res = await fetch('/api/schedule-periods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_date: startDate, end_date: endDate }),
+    })
+    const json = await res.json()
+    const p: SchedulePeriod = json.period
+    setPeriod(p)
+    return p
   }
 
-  async function handleSendSMS(shiftId: string) {
-    setSendingShift(shiftId)
-    try {
-      const res = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftId }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error ?? 'Failed to send SMS')
-      }
-      await loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send SMS')
-    } finally {
-      setSendingShift(null)
+  async function handleUpsertEntry(
+    employeeId: string,
+    date: string,
+    data: {
+      start_time?: string | null
+      end_time?: string | null
+      is_off?: boolean
+      department_id?: string | null
     }
+  ) {
+    const p = await ensurePeriod()
+    const res = await fetch('/api/schedule-entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employee_id: employeeId, date, period_id: p.id, ...data }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    const json = await res.json()
+    const updated: ScheduleEntry = json.entry
+    setEntries(prev => {
+      const filtered = prev.filter(e => !(e.employee_id === employeeId && e.date === date))
+      return [...filtered, updated]
+    })
   }
 
-  function getShift(templateId: string, date: string): Shift | undefined {
-    return shifts.find(s => s.shift_template_id === templateId && s.date === date)
+  async function handleDeleteEntry(entryId: string) {
+    const res = await fetch(`/api/schedule-entries?id=${entryId}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json()).error)
+    setEntries(prev => prev.filter(e => e.id !== entryId))
   }
 
-  function getConfirmed(shiftId: string): Assignment[] {
-    return assignments.filter(a => a.shift_id === shiftId && a.status === 'confirmed')
+  async function handleSetCoverage(
+    entryId: string,
+    data: {
+      needs_coverage: boolean
+      coverage_note?: string | null
+      covered_by_employee_id?: string | null
+    }
+  ) {
+    const res = await fetch(`/api/schedule-entries/${entryId}/coverage`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    const json = await res.json()
+    const updated: ScheduleEntry = json.entry
+    setEntries(prev => prev.map(e => e.id === entryId ? updated : e))
   }
 
-  function cellColor(shift: Shift | undefined): string {
-    if (!shift || shift.status === 'open') return 'bg-red-50 border-red-200'
-    if (shift.status === 'partial') return 'bg-yellow-50 border-yellow-200'
-    if (shift.status === 'filled') return 'bg-green-50 border-green-200'
-    return 'bg-gray-50 border-gray-200'
+  async function handleMoveEntry(
+    entryId: string,
+    newDate: string,
+    newStartTime: string,
+    newEndTime: string
+  ) {
+    const res = await fetch('/api/schedule-entries', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: entryId, date: newDate, start_time: newStartTime, end_time: newEndTime }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error)
+    const json = await res.json()
+    const updated: ScheduleEntry = json.entry
+    setEntries(prev => prev.map(e => e.id === entryId ? updated : e))
   }
+
+  async function handleCreatePeriod() {
+    await ensurePeriod()
+  }
+
+  // ──────────────────────────────────────────
+  // Week nav label
+  // ──────────────────────────────────────────
+
+  const weekLabel = (() => {
+    const start = weekDates[0]
+    const end = weekDates[6]
+    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return `${WEEK_DAYS[0]} ${fmt(start)} – ${WEEK_DAYS[6]} ${fmt(end)}, ${end.getFullYear()}`
+  })()
+
+  const needsCoverage = entries.filter(e => e.needs_coverage).length
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col h-full">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-200 bg-white">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Week of {weekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
-            {weekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          <h1 className="text-xl font-bold text-gray-900">Schedule</h1>
+          <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-2">
+            {weekLabel}
+            {needsCoverage > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-medium">
+                ⚠ {needsCoverage} shift{needsCoverage !== 1 ? 's' : ''} need{needsCoverage === 1 ? 's' : ''} coverage
+              </span>
+            )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n })}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
-          >← Prev</button>
+          >
+            ← Prev
+          </button>
           <button
             onClick={() => setWeekStart(getMonday(new Date()))}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
-          >Today</button>
+          >
+            Today
+          </button>
           <button
             onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n })}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
-          >Next →</button>
-
-          {!period && (
-            <button
-              onClick={handleGenerate}
-              disabled={generating || templates.length === 0}
-              className="px-4 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {generating ? 'Generating...' : 'Generate Schedule'}
-            </button>
-          )}
+          >
+            Next →
+          </button>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
-          {error}
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="flex gap-0 border-b border-gray-200 bg-white px-6">
+        {(['employee', 'visual'] as Tab[]).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === t
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            {t === 'employee' ? '📋 Employee Grid' : '📊 Visual Grid'}
+          </button>
+        ))}
+      </div>
 
-      {loading ? (
-        <div className="text-center py-20 text-gray-400">Loading...</div>
-      ) : templates.length === 0 ? (
-        <div className="text-center py-20 text-gray-400">
-          <p className="text-lg mb-2">No shift templates yet.</p>
-          <a href="/grid-builder" className="text-indigo-600 text-sm hover:underline">Set up your shift grid →</a>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr>
-                <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider py-2 pr-4 w-32">Shift</th>
-                {weekDates.map((d, i) => (
-                  <th key={i} className="text-center text-xs font-medium text-gray-500 uppercase tracking-wider py-2 px-2 min-w-[100px]">
-                    <div>{DAY_NAMES[d.getDay()]}</div>
-                    <div className="text-gray-900 font-semibold">{d.getDate()}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {templates.map(template => (
-                <tr key={template.id}>
-                  <td className="pr-4 py-2">
-                    <div className="text-sm font-medium text-gray-900">{template.name}</div>
-                    <div className="text-xs text-gray-400">{template.start_time}–{template.end_time}</div>
-                  </td>
-                  {weekDates.map((d, i) => {
-                    const dow = d.getDay()
-                    const dateStr = formatDate(d)
-                    const active = template.days_of_week.includes(dow)
-                    const shift = getShift(template.id, dateStr)
-                    const confirmed = shift ? getConfirmed(shift.id) : []
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-6">
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+            {error}
+          </div>
+        )}
 
-                    return (
-                      <td key={i} className="px-2 py-2">
-                        {active ? (
-                          <div className={`border rounded-lg p-2 text-xs ${cellColor(shift)}`}>
-                            {shift ? (
-                              <>
-                                <div className="font-medium text-gray-700 mb-1">
-                                  {confirmed.length}/{shift.slots_required} filled
-                                </div>
-                                {confirmed.map(a => (
-                                  <div key={a.id} className="text-gray-600 truncate">{a.users?.name}</div>
-                                ))}
-                                {shift.status !== 'filled' && (
-                                  <button
-                                    onClick={() => handleSendSMS(shift.id)}
-                                    disabled={sendingShift === shift.id}
-                                    className="mt-1 w-full text-center py-0.5 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50"
-                                  >
-                                    {sendingShift === shift.id ? '...' : 'Send SMS'}
-                                  </button>
-                                )}
-                              </>
-                            ) : (
-                              <div className="text-gray-400 italic">No shift</div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="border border-gray-100 rounded-lg p-2 bg-gray-50 text-xs text-gray-300 text-center">—</div>
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        {loading ? (
+          <div className="text-center py-20 text-gray-400">Loading…</div>
+        ) : employees.length === 0 ? (
+          <div className="text-center py-20 text-gray-400">
+            <p className="text-lg mb-2">No employees yet.</p>
+            <a href="/employees" className="text-indigo-600 text-sm hover:underline">Add employees →</a>
+          </div>
+        ) : tab === 'employee' ? (
+          <EmployeeGrid
+            weekDates={weekDates}
+            employees={employees}
+            departments={departments}
+            entries={entries}
+            period={period}
+            onUpsertEntry={handleUpsertEntry}
+            onDeleteEntry={handleDeleteEntry}
+            onSetCoverage={handleSetCoverage}
+            onCreatePeriod={handleCreatePeriod}
+          />
+        ) : (
+          <VisualGrid
+            weekDates={weekDates}
+            employees={employees}
+            departments={departments}
+            entries={entries}
+            onMoveEntry={handleMoveEntry}
+            onSetCoverage={handleSetCoverage}
+          />
+        )}
+      </div>
     </div>
   )
 }

@@ -91,7 +91,8 @@ export async function POST(req: NextRequest) {
         .select()
 
       if (shiftsError) throw shiftsError
-      shifts = insertedShifts || []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      shifts = (insertedShifts || []) as any
     }
 
     return NextResponse.json({ period, shifts, count: shifts.length }, { status: 201 })

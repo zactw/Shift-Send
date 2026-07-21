@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -22,21 +24,26 @@ export default function OnboardingPage() {
       if (!user) throw new Error('Not authenticated')
 
       // Create workspace
-      const { data: workspace, error: wsError } = await supabase
+      const slug = workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') +
+        '-' + Math.random().toString(36).slice(2, 7)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any
+      const { data: workspace, error: wsError } = await sb
         .from('workspaces')
-        .insert({ name: workspaceName, owner_id: user.id })
+        .insert({ name: workspaceName, slug })
         .select()
         .single()
 
       if (wsError) throw wsError
 
       // Create user record
-      const { error: userError } = await supabase
+      const { error: userError } = await sb
         .from('users')
         .insert({
           id: user.id,
           workspace_id: workspace.id,
-          name: user.email?.split('@')[0] ?? 'Manager',
+          email: user.email ?? '',
+          full_name: user.email?.split('@')[0] ?? 'Manager',
           role: 'manager',
         })
 
